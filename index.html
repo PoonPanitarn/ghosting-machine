@@ -1150,57 +1150,82 @@ function exportPDF() {
   let y = 0;
 
   // ═══════════════════════════════
-  // HEADER — white bg, logo + title
+  // HEADER — clean aligned layout
   // ═══════════════════════════════
-  // Logo image (base64 embedded in page)
   const logoEl = document.querySelector('.auth-logo img') || document.querySelector('.logo-mark img');
+
+  const headerTop = 12;
+  const logoSize = 12;
+  const titleX = margin + 16;
+
   if (logoEl && logoEl.src && logoEl.src.startsWith('data:image')) {
-    try { doc.addImage(logoEl.src, 'PNG', margin, 10, 14, 14); } catch(e) {}
+    try { doc.addImage(logoEl.src, 'PNG', margin, headerTop - 2, logoSize, logoSize); } catch(e) {}
   }
 
+  // Left block
   doc.setTextColor(...cBlack);
-  doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('Ghosting-Machine Producer', margin + 17, 17);
-  doc.setFontSize(8);
+  doc.setFontSize(13);
+  doc.text('Ghosting-Machine Producer', titleX, headerTop + 2);
+
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...cGray);
-  doc.text('Production Budget Statement', margin + 17, 22);
-
-  // Export date right
   doc.setFontSize(8);
   doc.setTextColor(...cGray);
-  doc.text('Exported: ' + new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }), W - margin, 17, { align: 'right' });
+  doc.text('Production Budget Statement', titleX, headerTop + 7);
 
-  // Divider line under header
+  // Right block
+  const exportDate = new Date().toLocaleDateString('th-TH', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(...cDark);
+  doc.text('EXPORT DATE', W - margin, headerTop + 1, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...cGray);
+  doc.text(exportDate, W - margin, headerTop + 6, { align: 'right', maxWidth: 40 });
+
+  // Divider
   doc.setDrawColor(...cBorder);
-  doc.setLineWidth(0.5);
-  doc.line(margin, 27, W - margin, 27);
-  y = 34;
+  doc.setLineWidth(0.45);
+  doc.line(margin, 28, W - margin, 28);
+  y = 37;
 
   // ═══════════════════════════════
   // PROJECT INFO
   // ═══════════════════════════════
-  doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
   doc.setTextColor(...cBlack);
-  doc.text(proj.name, margin, y);
-  y += 6;
 
-  doc.setFontSize(8.5);
+  const projectTitle = doc.splitTextToSize(proj.name || 'Untitled Project', contentW);
+  doc.text(projectTitle, margin, y);
+  y += projectTitle.length * 5;
+
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
   doc.setTextColor(...cGray);
+
   const metaParts = [];
   if (proj.client) metaParts.push('Client: ' + proj.client);
   if (proj.startDate) metaParts.push('Date: ' + fmtDate(proj.startDate));
   metaParts.push('Budget: ' + fmtMoney(proj.budget));
-  doc.text(metaParts.join('   |   '), margin, y);
-  y += 4;
+
+  const metaText = metaParts.join('   •   ');
+  const wrappedMeta = doc.splitTextToSize(metaText, contentW);
+
+  doc.text(wrappedMeta, margin, y);
+  y += wrappedMeta.length * 4.5;
 
   doc.setDrawColor(...cBorder);
   doc.setLineWidth(0.3);
-  doc.line(margin, y + 2, W - margin, y + 2);
-  y += 8;
+  doc.line(margin, y + 3, W - margin, y + 3);
+  y += 10;
 
   // ═══════════════════════════════
   // SUMMARY ROW (4 columns, plain)
