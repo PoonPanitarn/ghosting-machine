@@ -6,6 +6,8 @@
 <title>Ghosting-Machine Producer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
 <!-- ══════════════════════════════════════
      🔥 FIREBASE CONFIG — แก้ไขตรงนี้!
@@ -683,6 +685,7 @@ function renderMain() {
           </div>
         </div>
         <div class="flex-row">
+          <button class="btn btn-ghost btn-sm" onclick="exportPDF()">📄 Export PDF</button>
           <button class="btn btn-ghost btn-sm" onclick="openEditProject()">✏️ Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteProject()">🗑 Delete</button>
         </div>
@@ -1021,6 +1024,316 @@ function closeModal(id) { document.getElementById(id).classList.remove('show'); 
 document.querySelectorAll('.modal-backdrop').forEach(bd => {
   bd.addEventListener('click', e => { if (e.target === bd) closeModal(bd.id); });
 });
+
+// ══════════════════════════════════
+// EXPORT PDF
+// ══════════════════════════════════
+function exportPDF() {
+  const proj = getProject();
+  if (!proj) return;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const W = 210;
+  const margin = 16;
+  const contentW = W - margin * 2;
+
+  // ── Colors ──
+  const cBg       = [15, 15, 14];
+  const cSurface  = [26, 26, 24];
+  const cAccent   = [200, 240, 100];
+  const cGreen    = [94, 201, 122];
+  const cRed      = [224, 85, 85];
+  const cAmber    = [232, 168, 58];
+  const cWhite    = [240, 239, 232];
+  const cMuted    = [85, 85, 82];
+  const cBorder   = [50, 50, 48];
+
+  // ── Computed values ──
+  const totalExpenses = proj.quotation.reduce((s, i) => s + i.amount, 0);
+  const estProfit     = proj.budget - totalExpenses;
+  const totalIn       = proj.transactions.filter(t => t.type === 'in').reduce((s, t) => s + t.amount, 0);
+  const totalOut      = proj.transactions.filter(t => t.type === 'out').reduce((s, t) => s + t.amount, 0);
+  const walletBalance = totalIn - totalOut;
+  const paidIds       = new Set(proj.transactions.filter(t => t.type === 'out' && t.quoteRef).map(t => t.quoteRef));
+
+  let y = 0;
+
+  // ════════════════════════════════
+  // HEADER BANNER
+  // ════════════════════════════════
+  doc.setFillColor(...cBg);
+  doc.rect(0, 0, W, 38, 'F');
+
+  // Accent bar left
+  doc.setFillColor(...cAccent);
+  doc.rect(0, 0, 4, 38, 'F');
+
+  // Logo circle
+  doc.setFillColor(...cAccent);
+  doc.circle(margin + 8, 19, 7, 'F');
+  doc.setTextColor(...cBg);
+  doc.setFontSize(10);
+  doc.text('GM', margin + 8, 21.5, { align: 'center' });
+
+  // App name
+  doc.setTextColor(...cWhite);
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Ghosting-Machine Producer', margin + 20, 16);
+  doc.setTextColor(...cMuted);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text('PRODUCTION BUDGET MANAGER', margin + 20, 22);
+
+  // Export date top-right
+  doc.setTextColor(...cMuted);
+  doc.setFontSize(7.5);
+  doc.text('Exported: ' + new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }), W - margin, 22, { align: 'right' });
+
+  y = 46;
+
+  // ════════════════════════════════
+  // PROJECT INFO BLOCK
+  // ════════════════════════════════
+  doc.setFillColor(...cSurface);
+  doc.roundedRect(margin, y, contentW, 28, 3, 3, 'F');
+  doc.setDrawColor(...cBorder);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, y, contentW, 28, 3, 3, 'S');
+
+  doc.setTextColor(...cAccent);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text(proj.name, margin + 8, y + 10);
+
+  doc.setTextColor(...cMuted);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  const meta = [
+    proj.client  ? '👤 ' + proj.client : null,
+    proj.startDate ? '📅 ' + fmtDate(proj.startDate) : null,
+    '💰 Budget: ' + fmtMoney(proj.budget),
+  ].filter(Boolean).join('    ');
+  doc.text(meta, margin + 8, y + 20);
+
+  y += 36;
+
+  // ════════════════════════════════
+  // SUMMARY CARDS (2×2 grid)
+  // ════════════════════════════════
+  const cards = [
+    { label: 'Total Budget',  value: fmtMoney(proj.budget),      color: cAccent },
+    { label: 'Total Expenses',value: fmtMoney(totalExpenses),    color: cRed    },
+    { label: 'Est. Profit',   value: fmtMoney(estProfit),        color: estProfit >= 0 ? cGreen : cRed },
+    { label: 'Wallet Balance',value: fmtMoney(walletBalance),    color: walletBalance >= 0 ? cGreen : cRed },
+  ];
+  const cardW = (contentW - 6) / 2;
+  const cardH = 22;
+  cards.forEach((c, i) => {
+    const cx = margin + (i % 2) * (cardW + 6);
+    const cy = y + Math.floor(i / 2) * (cardH + 5);
+    doc.setFillColor(...cSurface);
+    doc.roundedRect(cx, cy, cardW, cardH, 3, 3, 'F');
+    doc.setDrawColor(...cBorder);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(cx, cy, cardW, cardH, 3, 3, 'S');
+    // left accent stripe
+    doc.setFillColor(...c.color);
+    doc.roundedRect(cx, cy, 3, cardH, 1.5, 1.5, 'F');
+    doc.rect(cx + 1.5, cy, 1.5, cardH, 'F');
+
+    doc.setTextColor(...cMuted);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(c.label.toUpperCase(), cx + 8, cy + 8);
+
+    doc.setTextColor(...c.color);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(c.value, cx + 8, cy + 17);
+  });
+
+  y += cardH * 2 + 5 + 10;
+
+  // ════════════════════════════════
+  // SECTION HELPER
+  // ════════════════════════════════
+  function sectionTitle(title, count) {
+    doc.setFillColor(...cSurface);
+    doc.rect(margin, y, contentW, 9, 'F');
+    doc.setFillColor(...cAccent);
+    doc.rect(margin, y, 3, 9, 'F');
+    doc.setTextColor(...cWhite);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(title, margin + 7, y + 6.2);
+    if (count !== undefined) {
+      doc.setTextColor(...cMuted);
+      doc.setFontSize(7.5);
+      doc.text('(' + count + ' items)', margin + 7 + doc.getTextWidth(title) + 3, y + 6.2);
+    }
+    y += 13;
+  }
+
+  function checkPageBreak(needed = 20) {
+    if (y + needed > 275) {
+      doc.addPage();
+      doc.setFillColor(...cBg);
+      doc.rect(0, 0, W, 297, 'F');
+      y = 16;
+    }
+  }
+
+  // ════════════════════════════════
+  // QUOTATION TABLE
+  // ════════════════════════════════
+  checkPageBreak(30);
+  sectionTitle('📋 Quotation / Expense Budget', proj.quotation.length);
+
+  if (proj.quotation.length === 0) {
+    doc.setTextColor(...cMuted);
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'italic');
+    doc.text('No items yet.', margin + 4, y);
+    y += 10;
+  } else {
+    const qRows = proj.quotation.map(q => [
+      q.name,
+      q.category || '—',
+      fmtMoney(q.amount),
+      paidIds.has(q.id) ? '✓ Paid' : 'Unpaid',
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      head: [['Description', 'Category', 'Amount', 'Status']],
+      body: qRows,
+      styles: {
+        font: 'helvetica', fontSize: 8.5,
+        cellPadding: { top: 4, bottom: 4, left: 5, right: 5 },
+        fillColor: cSurface, textColor: cWhite, lineColor: cBorder, lineWidth: 0.2,
+      },
+      headStyles: { fillColor: [34, 34, 32], textColor: cMuted, fontSize: 7.5, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [20, 20, 18] },
+      columnStyles: {
+        2: { halign: 'right', textColor: cAmber },
+        3: {
+          halign: 'center',
+          textColor: [200, 200, 200],
+        },
+      },
+      margin: { left: margin, right: margin },
+      theme: 'grid',
+      didParseCell: (data) => {
+        if (data.column.index === 3 && data.section === 'body') {
+          const val = data.cell.raw;
+          data.cell.styles.textColor = val === '✓ Paid' ? cGreen : cAmber;
+        }
+      },
+    });
+
+    // Totals row
+    const afterTable = doc.lastAutoTable.finalY + 2;
+    doc.setFillColor(34, 34, 32);
+    doc.rect(margin, afterTable, contentW, 9, 'F');
+    doc.setTextColor(...cMuted);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Total Expenses', margin + 5, afterTable + 6);
+    doc.setTextColor(...cRed);
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmtMoney(totalExpenses), W - margin - 5, afterTable + 6, { align: 'right' });
+    y = afterTable + 14;
+  }
+
+  // ════════════════════════════════
+  // TRANSACTIONS TABLE
+  // ════════════════════════════════
+  checkPageBreak(30);
+  sectionTitle('💳 Transaction Tracker', proj.transactions.length);
+
+  if (proj.transactions.length === 0) {
+    doc.setTextColor(...cMuted);
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'italic');
+    doc.text('No transactions yet.', margin + 4, y);
+    y += 10;
+  } else {
+    const txSorted = [...proj.transactions].sort((a, b) => b.date.localeCompare(a.date));
+    const txRows = txSorted.map(t => [
+      (t.type === 'in' ? '▲ IN' : '▼ OUT'),
+      t.desc + (t.quoteRef ? ' [Q]' : ''),
+      fmtDate(t.date),
+      fmtMoney(t.amount),
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      head: [['Type', 'Description', 'Date', 'Amount']],
+      body: txRows,
+      styles: {
+        font: 'helvetica', fontSize: 8.5,
+        cellPadding: { top: 4, bottom: 4, left: 5, right: 5 },
+        fillColor: cSurface, textColor: cWhite, lineColor: cBorder, lineWidth: 0.2,
+      },
+      headStyles: { fillColor: [34, 34, 32], textColor: cMuted, fontSize: 7.5, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [20, 20, 18] },
+      columnStyles: {
+        0: { halign: 'center', fontStyle: 'bold', cellWidth: 18 },
+        3: { halign: 'right' },
+      },
+      margin: { left: margin, right: margin },
+      theme: 'grid',
+      didParseCell: (data) => {
+        if (data.column.index === 0 && data.section === 'body') {
+          data.cell.styles.textColor = data.cell.raw === '▲ IN' ? cGreen : cRed;
+        }
+        if (data.column.index === 3 && data.section === 'body') {
+          const row = txSorted[data.row.index];
+          data.cell.styles.textColor = row && row.type === 'in' ? cGreen : cRed;
+        }
+      },
+    });
+
+    // IN/OUT summary row
+    const afterTx = doc.lastAutoTable.finalY + 2;
+    doc.setFillColor(34, 34, 32);
+    doc.rect(margin, afterTx, contentW, 9, 'F');
+    doc.setTextColor(...cMuted);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    const inOutText = 'IN: ' + fmtMoney(totalIn) + '   OUT: ' + fmtMoney(totalOut);
+    doc.text(inOutText, margin + 5, afterTx + 6);
+    doc.setTextColor(walletBalance >= 0 ? cGreen[0] : cRed[0], walletBalance >= 0 ? cGreen[1] : cRed[1], walletBalance >= 0 ? cGreen[2] : cRed[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Balance: ' + fmtMoney(walletBalance), W - margin - 5, afterTx + 6, { align: 'right' });
+    y = afterTx + 18;
+  }
+
+  // ════════════════════════════════
+  // FOOTER on all pages
+  // ════════════════════════════════
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFillColor(...cSurface);
+    doc.rect(0, 286, W, 11, 'F');
+    doc.setDrawColor(...cBorder);
+    doc.setLineWidth(0.2);
+    doc.line(margin, 286, W - margin, 286);
+    doc.setTextColor(...cMuted);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Ghosting-Machine Producer  •  Production Budget Manager', margin, 292);
+    doc.text('Page ' + i + ' / ' + totalPages, W - margin, 292, { align: 'right' });
+  }
+
+  // ── Save ──
+  const safeName = proj.name.replace(/[^a-zA-Z0-9ก-๙\s]/g, '').trim().replace(/\s+/g, '_') || 'project';
+  doc.save('GM_' + safeName + '_' + new Date().toISOString().slice(0,10) + '.pdf');
+}
 
 // ══════════════════════════════════
 // UTILS
